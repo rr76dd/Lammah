@@ -74,44 +74,57 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-white text-black">
+      {/* ✅ شريط التنقل الجانبي */}
       <Sidebar />
 
-      <main className="flex-1 p-6 flex flex-col items-center">
-        <div className="w-full max-w-4xl">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-4xl font-bold">المكتبة</h1>
-            <div className="flex gap-3">
+      {/* ✅ المحتوى الرئيسي */}
+      <main className="flex-1 p-4 pt-20 flex flex-col items-center">
+        <div className="w-full max-w-sm sm:max-w-4xl">
+          {/* ✅ عنوان الصفحة وأزرار التحكم */}
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+            <h1 className="text-3xl sm:text-4xl font-bold flex items-center gap-2">
+              📚 المكتبة
+            </h1>
+            <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
               <CreateFolderModal onCreate={handleCreateFolder} />
-                {/* ✅ زر رفع الملفات */}
-                <input type="file" id="fileUpload" className="hidden" />
-                 <button
-                  onClick={() => document.getElementById("fileUpload")?.click()}
-                  className="flex items-center gap-2 px-4 py-2 bg-black text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition"
-                >
-                  📤 رفع ملف
-                </button>
-              </div>
+
+              {/* ✅ زر رفع الملفات */}
+              <input type="file" id="fileUpload" className="hidden" />
+              <button
+                onClick={() => document.getElementById("fileUpload")?.click()}
+                className="flex items-center gap-2 px-4 py-2 bg-black text-white font-semibold rounded-lg shadow-md hover:bg-gray-800 transition w-full sm:w-auto"
+              >
+                📤 رفع ملف
+              </button>
             </div>
+          </div>
 
-
+          {/* ✅ قائمة المجلدات مع السحب والإفلات */}
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={folders.map((folder) => folder.id)} strategy={verticalListSortingStrategy}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 justify-center">
-                {folders.map((folder) => (
-                  <SortableFolder
-                    key={folder.id}
-                    folder={folder}
-                    onSelect={(id) => console.log(`Selected folder: ${id}`)} // ✅ أضف `onSelect` هنا
-                    onEdit={() => setEditingFolder(folder)}
-                    onDelete={handleDeleteFolder}
-                  />
-                ))}
+                {folders.length > 0 ? (
+                  folders.map((folder) => (
+                    <SortableFolder
+                      key={folder.id}
+                      folder={folder}
+                      onSelect={(id) => console.log(`Selected folder: ${id}`)}
+                      onEdit={() => setEditingFolder(folder)}
+                      onDelete={handleDeleteFolder}
+                    />
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-center col-span-2 mt-4">
+                    📂 لا توجد مجلدات حاليًا، ابدأ بإنشاء مجلد جديد!
+                  </p>
+                )}
               </div>
             </SortableContext>
           </DndContext>
         </div>
       </main>
 
+      {/* ✅ نافذة تعديل المجلد */}
       {editingFolder && (
         <FolderEditModal
           folder={editingFolder}

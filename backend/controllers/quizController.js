@@ -1,122 +1,134 @@
-const supabase = require("../supabaseClient");
+const supabase = require("../config/supabase");
 
-// 📌 دالة لإنشاء اختبار جديد بناءً على الفلاش كاردز
-async function generateQuiz(req, res) {
-    try {
-        const { fileId, userId, title } = req.body;
+// ✅ استرجاع جميع الاختبارات مع دعم Pagination
+exports.getQuizzes = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const start = (page - 1) * limit;
+    const end = start + limit - 1;
 
-        // ✅ التحقق من صحة الإدخال
-        if (!fileId || !userId) {
-            return res.status(400).json({ error: "Missing required fields: fileId, userId" });
-        }
+    const { data, error } = await supabase
+      .from("quizzes")
+      .select("id, title, difficulty, created_at, user_id")
+      .order("created_at", { ascending: false })
+      .range(start, end);
 
-        // 🔍 استرجاع الفلاش كاردز المرتبطة بهذا الملف
-        const { data: flashcards, error: flashcardsError } = await supabase
-            .from("flashcards")
-            .select("*")
-            .eq("file_id", fileId);
+    if (error) return res.status(400).json({ error: error.message });
 
-        if (flashcardsError) {
-            console.error("🚨 Supabase Error fetching flashcards:", flashcardsError);
-            return res.status(500).json({ error: "Failed to fetch flashcards!" });
-        }
+    res.status(200).json({ quizzes: data });
+  } catch (error) {
+    res.status(500).json({ error: "❌ خطأ في استرجاع الاختبارات: " + error.message });
+  }
+};
 
-        if (!flashcards || flashcards.length === 0) {
-            return res.status(404).json({ error: "No flashcards available for this file!" });
-        }
+// ✅ استرجاع اختبار معين عبر ID
+exports.getQuizById = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-        console.log("✅ Flashcards retrieved:", flashcards.length);
+    const { data, error } = await supabase
+      .from("quizzes")
+      .select("id, title, difficulty, questions, created_at, user_id")
+      .eq("id", id)
+      .single();
 
-        // ✅ إنشاء الاختبار في قاعدة البيانات
-        const quizTitle = title || `Quiz for file ${fileId}`;
-        const { data: quiz, error: quizError } = await supabase
-            .from("quizzes")
-            .insert([{ 
-                file_id: fileId, 
-                user_id: userId, 
-                title: quizTitle  
-            }])
-            .select()
-            .single();
+    if (error || !data) return res.status(404).json({ error: "❌ الاختبار غير موجود" });
 
-        if (quizError) {
-            console.error("🔥 Error creating quiz:", quizError);
-            return res.status(500).json({ error: quizError.message });
-        }
+    res.status(200).json({ quiz: data });
+  } catch (error) {
+    res.status(500).json({ error: "❌ خطأ في استرجاع الاختبار: " + error.message });
+  }
+};
 
-        console.log("✅ Quiz created:", quiz);
+// ✅ إنشاء اختبار جديد
+exports.createQuiz = async (req, res) => {
+  try {
+    const { title, difficulty, questions } = req.body;
+    const userId = req.user.id;
 
-        // 🔥 تحويل الفلاش كاردز إلى أسئلة اختبار اختيار من متعدد
-        const quizQuestions = flashcards.map(card => ({
-            quiz_id: quiz.id,
-            question: card.question,
-            option_a: card.answer,
-            option_b: "إجابة خاطئة 1",
-            option_c: "إجابة خاطئة 2",
-            option_d: "إجابة خاطئة 3",
-            correct_answer: card.answer
-        }));
-
-        console.log("📥 Preparing quiz questions:", JSON.stringify(quizQuestions, null, 2));
-
-        // ✅ حفظ الأسئلة في Supabase
-        const { data: questions, error: questionsError } = await supabase
-            .from("quiz_questions")
-            .insert(quizQuestions)
-            .select();
-
-        if (questionsError) {
-            console.error("🔥 Error inserting questions:", questionsError);
-            return res.status(500).json({ error: questionsError.message });
-        }
-
-        console.log("✅ Quiz questions saved successfully. Total:", questions.length);
-        res.json({ message: "Quiz generated successfully!", quiz, questions });
-
-    } catch (err) {
-        console.error("🚨 Unexpected error:", err);
-        res.status(500).json({ error: "An unexpected error occurred!" });
+    if (!title || !difficulty || !questions || !Array.isArray(questions)) {
+      return res.status(400).json({ error: "❌ جميع الحقول مطلوبة" });
     }
-}
 
-// 📌 دالة لاسترجاع اختبار معين مع أسئلته
-async function getQuiz(req, res) {
-    try {
-        const { quizId } = req.params;
+    const { data, error } = await supabase
+      .from("quizzes")
+      .insert([{ title, difficulty, questions, user_id: userId }]);
 
-        if (!quizId) {
-            return res.status(400).json({ error: "Quiz ID is required!" });
-        }
+    if (error) return res.status(400).json({ error: error.message });
 
-        // ✅ جلب بيانات الاختبار
-        const { data: quiz, error: quizError } = await supabase
-            .from("quizzes")
-            .select("*")
-            .eq("id", quizId)
-            .single();
+    res.status(201).json({ message: "✅ تم إنشاء الاختبار بنجاح", quiz: data });
+  } catch (error) {
+    res.status(500).json({ error: "❌ خطأ في إنشاء الاختبار: " + error.message });
+  }
+};
 
-        if (quizError || !quiz) {
-            return res.status(404).json({ error: "Quiz not found!" });
-        }
+// ✅ تحديث اختبار معين
+exports.updateQuiz = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, difficulty, questions } = req.body;
+    const userId = req.user.id;
 
-        // ✅ جلب الأسئلة المرتبطة بالاختبار
-        const { data: questions, error: questionsError } = await supabase
-            .from("quiz_questions")
-            .select("*")
-            .eq("quiz_id", quizId);
+    // التحقق من ملكية المستخدم للاختبار
+    const { data: existingQuiz, error: fetchError } = await supabase
+      .from("quizzes")
+      .select("user_id")
+      .eq("id", id)
+      .single();
 
-        if (questionsError) {
-            return res.status(500).json({ error: "Error fetching quiz questions!" });
-        }
-
-        console.log("✅ Retrieved quiz with questions:", questions.length);
-        res.json({ quiz, questions });
-
-    } catch (err) {
-        console.error("🚨 Unexpected error:", err);
-        res.status(500).json({ error: "An unexpected error occurred!" });
+    if (fetchError || !existingQuiz) {
+      return res.status(404).json({ error: "❌ الاختبار غير موجود" });
     }
-}
 
-// ✅ تصدير الدوال
-module.exports = { generateQuiz, getQuiz };
+    if (existingQuiz.user_id !== userId) {
+      return res.status(403).json({ error: "❌ ليس لديك إذن لتعديل هذا الاختبار" });
+    }
+
+    // تحديث الاختبار
+    const { data, error } = await supabase
+      .from("quizzes")
+      .update({ title, difficulty, questions })
+      .eq("id", id);
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.status(200).json({ message: "✅ تم تحديث الاختبار بنجاح", quiz: data });
+  } catch (error) {
+    res.status(500).json({ error: "❌ خطأ في تحديث الاختبار: " + error.message });
+  }
+};
+
+// ✅ حذف اختبار معين
+exports.deleteQuiz = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // التحقق من ملكية المستخدم للاختبار
+    const { data: existingQuiz, error: fetchError } = await supabase
+      .from("quizzes")
+      .select("user_id")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !existingQuiz) {
+      return res.status(404).json({ error: "❌ الاختبار غير موجود" });
+    }
+
+    if (existingQuiz.user_id !== userId) {
+      return res.status(403).json({ error: "❌ ليس لديك إذن لحذف هذا الاختبار" });
+    }
+
+    // حذف الاختبار
+    const { error } = await supabase
+      .from("quizzes")
+      .delete()
+      .eq("id", id);
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.status(200).json({ message: "✅ تم حذف الاختبار بنجاح" });
+  } catch (error) {
+    res.status(500).json({ error: "❌ خطأ في حذف الاختبار: " + error.message });
+  }
+};

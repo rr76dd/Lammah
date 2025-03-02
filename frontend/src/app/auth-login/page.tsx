@@ -1,23 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FcGoogle } from "react-icons/fc"; // Google icon
+import { FcGoogle } from "react-icons/fc";
 import Image from "next/image";
 import Link from "next/link";
+import supabase from "@/utils/supabaseClient"; // ✅ استيراد supabase
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState(""); // ✅ تخزين رسائل الخطأ
+  const [loading, setLoading] = useState(false); // ✅ إضافة مؤشر التحميل
+  const router = useRouter();
 
+  // ✅ منع المستخدم المسجل من الوصول إلى صفحة تسجيل الدخول
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user) {
+        router.replace("/dashboard"); // ✅ استخدام replace بدلاً من push لتجنب الرجوع إلى صفحة تسجيل الدخول
+      }
+    };
+    checkUser();
+  }, [router]);
+
+  // ✅ تسجيل الدخول باستخدام البريد وكلمة المرور
   const handleLogin = async () => {
-    console.log("تسجيل الدخول:", { email, password });
+    setError("");
+    setLoading(true);
+
+    if (!email || !password) {
+      setError("❌ البريد الإلكتروني وكلمة المرور مطلوبان");
+      setLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    setLoading(false);
+
+    if (error) {
+      setError("❌ " + error.message);
+      return;
+    }
+
+    // ✅ إعادة التوجيه بعد نجاح تسجيل الدخول
+    router.push("/dashboard");
   };
 
-  const handleGoogleLogin = () => {
-    console.log("تسجيل الدخول عبر Google");
+  // ✅ تسجيل الدخول باستخدام Google
+  const handleGoogleLogin = async () => {
+    setError("");
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+    });
+
+    setLoading(false);
+
+    if (error) {
+      setError("❌ " + error.message);
+    }
   };
 
   return (
@@ -35,6 +86,9 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
+              {/* ✅ عرض رسالة الخطأ إن وجدت */}
+              {error && <p className="text-red-500 text-center">{error}</p>}
+
               <Input
                 type="email"
                 placeholder="البريد الإلكتروني"
@@ -52,13 +106,18 @@ export default function LoginPage() {
               <div className="text-right text-sm text-blue-500 cursor-pointer">
                 هل نسيت كلمة المرور؟
               </div>
-              <Button className="w-full bg-black text-white p-3 text-lg" onClick={handleLogin}>
-                تسجيل الدخول
+              <Button
+                className="w-full bg-black text-white p-3 text-lg"
+                onClick={handleLogin}
+                disabled={loading} // ✅ تعطيل الزر أثناء التحميل
+              >
+                {loading ? "جاري تسجيل الدخول..." : "تسجيل الدخول"}
               </Button>
               <div className="text-center text-gray-500 text-lg">أو</div>
               <Button
                 className="w-full flex items-center justify-center border border-gray-300 p-3 text-lg"
                 onClick={handleGoogleLogin}
+                disabled={loading} // ✅ تعطيل الزر أثناء التحميل
               >
                 <FcGoogle className="text-2xl mr-2" />
                 تسجيل الدخول عبر Google

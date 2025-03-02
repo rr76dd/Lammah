@@ -1,4 +1,3 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../config/supabase');
 
@@ -10,23 +9,23 @@ exports.register = async (req, res) => {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            return res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
+            return res.status(400).json({ error: "❌ البريد الإلكتروني وكلمة المرور مطلوبان" });
         }
 
-        // تشفير كلمة المرور
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // إضافة المستخدم إلى Supabase
+        // إضافة المستخدم إلى Supabase بدون تشفير يدوي
         const { data, error } = await supabase.auth.signUp({
             email,
-            password: hashedPassword
+            password
         });
 
-        if (error) throw error;
+        if (error) return res.status(400).json({ error: error.message });
 
-        res.status(201).json({ message: "تم إنشاء الحساب بنجاح!", user: data });
+        res.status(201).json({
+            message: "✅ تم إنشاء الحساب بنجاح! تحقق من بريدك الإلكتروني لتفعيل الحساب.",
+            user: data.user
+        });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: "❌ خطأ في السيرفر: " + error.message });
     }
 };
 
@@ -36,22 +35,34 @@ exports.login = async (req, res) => {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            return res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
+            return res.status(400).json({ error: "❌ البريد الإلكتروني وكلمة المرور مطلوبان" });
         }
 
-        // التحقق من المستخدم
+        // تسجيل الدخول عبر Supabase
         const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password
         });
 
-        if (error) throw error;
+        if (error) return res.status(400).json({ error: error.message });
 
-        // إنشاء توكين JWT
-        const token = jwt.sign({ id: data.user.id, email: data.user.email }, JWT_SECRET, { expiresIn: '7d' });
+        // الحصول على بيانات المستخدم بعد تسجيل الدخول
+        const { user } = data;
+        if (!user) return res.status(401).json({ error: "❌ لا يمكن جلب بيانات المستخدم." });
 
-        res.status(200).json({ message: "تم تسجيل الدخول بنجاح!", token });
+        // إنشاء توكين JWT يحتوي على معلومات المستخدم
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role || "user" }, 
+            JWT_SECRET, 
+            { expiresIn: '7d' }
+        );
+
+        res.status(200).json({
+            message: "✅ تم تسجيل الدخول بنجاح!",
+            token,
+            user: { id: user.id, email: user.email, role: user.role || "user" }
+        });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: "❌ خطأ في السيرفر: " + error.message });
     }
 };

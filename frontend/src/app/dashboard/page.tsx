@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 
@@ -31,6 +31,18 @@ export default function Dashboard() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null); // ✅ تصنيف المجلدات
   const router = useRouter();
 
+  /* ✅ تحميل قائمة المجلدات عند بدء تشغيل الصفحة */
+  useEffect(() => {
+    const savedFolders = JSON.parse(localStorage.getItem("folders") || "[]");
+    setFolders(savedFolders);
+  }, []);
+
+  /* ✅ تحديث قائمة المجلدات في Local Storage */
+  const updateFolders = (updatedFolders: Folder[]) => {
+    setFolders(updatedFolders);
+    localStorage.setItem("folders", JSON.stringify(updatedFolders));
+  };
+
   /* ✅ فتح المجلد عند النقر عليه */
   const handleOpenFolder = (id: string) => {
     router.push(`/dashboard/folder/${id}`);
@@ -39,13 +51,13 @@ export default function Dashboard() {
   /* ✅ إنشاء مجلد جديد */
   const handleCreateFolder = (name: string, icon: string, tag: string) => {
     const newFolder: Folder = { id: uuidv4(), name, icon, tag, files: [] };
-    setFolders([...folders, newFolder]);
+    updateFolders([...folders, newFolder]);
   };
 
   /* ✅ تعديل المجلد */
   const handleEditFolder = (updatedFolder: Folder) => {
-    setFolders((prev) =>
-      prev.map((folder) =>
+    updateFolders(
+      folders.map((folder) =>
         folder.id === updatedFolder.id ? { ...folder, ...updatedFolder } : folder
       )
     );
@@ -56,7 +68,7 @@ export default function Dashboard() {
   const handleDeleteFolder = (id: string) => {
     const confirmDelete = window.confirm("هل أنت متأكد أنك تريد حذف هذا المجلد؟");
     if (confirmDelete) {
-      setFolders((prev) => prev.filter((folder) => folder.id !== id));
+      updateFolders(folders.filter((folder) => folder.id !== id));
     }
   };
 
@@ -72,12 +84,14 @@ export default function Dashboard() {
       type: files[0].type,
     };
 
-    setFolders((prev) =>
-      prev.length > 0
-        ? prev.map((folder, index) =>
-            index === prev.length - 1 ? { ...folder, files: [...folder.files, uploadedFile] } : folder
+    updateFolders(
+      folders.length > 0
+        ? folders.map((folder, index) =>
+            index === folders.length - 1
+              ? { ...folder, files: [...folder.files, uploadedFile] }
+              : folder
           )
-        : prev
+        : folders
     );
   };
 

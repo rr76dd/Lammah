@@ -1,15 +1,27 @@
 const express = require("express");
-const { generateFlashcards, getFlashcardsByFile, getFlashcardsByUser } = require("../controllers/flashcardController");
-
 const router = express.Router();
+const protectRoute = require("../middleware/authMiddleware");
+const {
+    getFlashcards,
+    getFlashcardById,
+    createFlashcard,
+    updateFlashcard,
+    deleteFlashcard
+} = require("../controllers/flashcardController");
 
-// ✅ إنشاء فلاش كاردز لملف معين
-router.post("/generate", generateFlashcards);
+// ✅ استرجاع جميع الفلاش كاردز مع دعم Pagination
+router.get("/", protectRoute, getFlashcards);
 
-// ✅ استرجاع الفلاش كاردز الخاصة بملف معين
-router.get("/:fileId", getFlashcardsByFile);
+// ✅ استرجاع فلاش كارد واحد عبر ID
+router.get("/:id", protectRoute, getFlashcardById);
 
-// ✅ استرجاع جميع الفلاش كاردز الخاصة بمستخدم معين
-router.get("/user/:userId", getFlashcardsByUser);
+// ✅ إنشاء فلاش كارد جديد
+router.post("/", protectRoute, createFlashcard);
+
+// ✅ تحديث فلاش كارد معين
+router.put("/:id", protectRoute, updateFlashcard);
+
+// ✅ حذف فلاش كارد معين
+router.delete("/:id", protectRoute, deleteFlashcard);
 
 module.exports = router;

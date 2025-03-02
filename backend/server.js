@@ -10,7 +10,7 @@ app.use(cors());
 const authRoutes = require('./routes/authRoutes');
 const fileRoutes = require('./routes/fileRoutes');
 const quizRoutes = require('./routes/quizRoutes');
-const flashcardRoutes = require('./routes/flashCardRoutes'); // تأكد من الاسم الصحيح
+const flashcardRoutes = require('./routes/flashCardRoutes'); 
 
 // ✅ تأكد من استخدام `app.use()` بشكل صحيح
 app.use('/api/auth', authRoutes);

@@ -1,121 +1,134 @@
-const supabase = require("../supabaseClient");
+const supabase = require("../config/supabase");
 
-// 📌 دالة لتحليل الملفات وإنشاء فلاش كاردز تلقائيًا
-async function generateFlashcards(req, res) {
+// ✅ استرجاع جميع الفلاش كاردز مع دعم Pagination
+exports.getFlashcards = async (req, res) => {
     try {
-        const { fileId } = req.body;
+        const { page = 1, limit = 10 } = req.query;
+        const start = (page - 1) * limit;
+        const end = start + limit - 1;
 
-        // 1️⃣ ✅ استرجاع بيانات الملف
-        const { data: fileData, error: fileError } = await supabase
-            .from("uploaded_files")
-            .select("*")
-            .eq("id", fileId)
+        const { data, error } = await supabase
+            .from("flashcards")
+            .select("id, question, answer, created_at, user_id")
+            .order("created_at", { ascending: false })
+            .range(start, end);
+
+        if (error) return res.status(400).json({ error: error.message });
+
+        res.status(200).json({ flashcards: data });
+    } catch (error) {
+        res.status(500).json({ error: "❌ خطأ في استرجاع الفلاش كاردز: " + error.message });
+    }
+};
+
+// ✅ استرجاع فلاش كارد معين عبر ID
+exports.getFlashcardById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { data, error } = await supabase
+            .from("flashcards")
+            .select("id, question, answer, created_at, user_id")
+            .eq("id", id)
             .single();
 
-        console.log("🔍 File Query Result:", fileData, "Error:", fileError);
+        if (error || !data) return res.status(404).json({ error: "❌ الفلاش كارد غير موجود" });
 
-        if (fileError || !fileData) {
-            console.error("🚨 File not found in Supabase:", fileError);
-            return res.status(400).json({ error: "File not found!" });
-        }
-
-        console.log("📄 Processing file:", fileData.file_name);
-
-        // 2️⃣ 🔥 محاكاة استخراج الفلاش كاردز من الملف
-        const extractedFlashcards = [
-            { question: "ما هو مفهوم الذكاء الاصطناعي؟", answer: "هو فرع من علوم الكمبيوتر يهتم بتطوير الأنظمة القادرة على محاكاة الذكاء البشري." },
-            { question: "ما هي لغة البرمجة الأكثر استخدامًا في تطوير الذكاء الاصطناعي؟", answer: "بايثون (Python) هي الأكثر شيوعًا بسبب مكتباتها القوية مثل TensorFlow و PyTorch." }
-        ];
-
-        console.log("✅ Flashcards extracted:", extractedFlashcards);
-
-        // 3️⃣ ✅ تجهيز البيانات قبل الإدراج
-        const flashcardsToInsert = extractedFlashcards.map(card => ({
-            file_id: fileId,
-            user_id: fileData.user_id,
-            question: card.question,
-            answer: card.answer
-        }));
-
-        console.log("📥 Flashcards to insert:", JSON.stringify(flashcardsToInsert, null, 2));
-
-        // 4️⃣ ✅ حفظ الفلاش كاردز في قاعدة البيانات
-        const { data, error } = await supabase
-            .from("flashcards")
-            .insert(flashcardsToInsert)
-            .select();
-
-        console.log("🔥 Supabase Insert Response:", JSON.stringify(data, null, 2));
-        console.log("🔥 Supabase Insert Error:", JSON.stringify(error, null, 2));
-
-        if (error || !data || data.length === 0) {
-            console.error("🔥 Supabase Insert Error:", error);
-            return res.status(500).json({ error: "Failed to insert flashcards into database!" });
-        }
-
-        console.log("✅ Flashcards saved successfully:", data);
-        res.json({ message: "Flashcards generated successfully!", flashcards: data });
-
-    } catch (err) {
-        console.error("🚨 Unexpected error:", err);
-        res.status(500).json({ error: "An unexpected error occurred!" });
+        res.status(200).json({ flashcard: data });
+    } catch (error) {
+        res.status(500).json({ error: "❌ خطأ في استرجاع الفلاش كارد: " + error.message });
     }
-}
+};
 
-// 📌 استرجاع الفلاش كاردز الخاصة بملف معين
-async function getFlashcardsByFile(req, res) {
+// ✅ إنشاء فلاش كارد جديد
+exports.createFlashcard = async (req, res) => {
     try {
-        const { fileId } = req.params;
+        const { question, answer } = req.body;
+        const userId = req.user.id;
+
+        if (!question || !answer) {
+            return res.status(400).json({ error: "❌ السؤال والإجابة مطلوبان" });
+        }
 
         const { data, error } = await supabase
             .from("flashcards")
-            .select("*")
-            .eq("file_id", fileId);
+            .insert([{ question, answer, user_id: userId }]);
 
-        if (error) {
-            console.error("🔥 Supabase Error:", error);
-            return res.status(500).json({ error: error.message });
-        }
+        if (error) return res.status(400).json({ error: error.message });
 
-        if (!data || data.length === 0) {
-            return res.status(404).json({ message: "No flashcards found for this file." });
-        }
-
-        console.log("✅ Flashcards retrieved:", data);
-        res.json({ flashcards: data });
-
-    } catch (err) {
-        console.error("🚨 Unexpected error:", err);
-        res.status(500).json({ error: "An unexpected error occurred!" });
+        res.status(201).json({ message: "✅ تم إنشاء الفلاش كارد بنجاح", flashcard: data });
+    } catch (error) {
+        res.status(500).json({ error: "❌ خطأ في إنشاء الفلاش كارد: " + error.message });
     }
-}
+};
 
-// 📌 استرجاع جميع الفلاش كاردز الخاصة بمستخدم معين
-async function getFlashcardsByUser(req, res) {
+// ✅ تحديث فلاش كارد معين
+exports.updateFlashcard = async (req, res) => {
     try {
-        const { userId } = req.params;
+        const { id } = req.params;
+        const { question, answer } = req.body;
+        const userId = req.user.id;
 
+        // التحقق من ملكية المستخدم
+        const { data: existingCard, error: fetchError } = await supabase
+            .from("flashcards")
+            .select("user_id")
+            .eq("id", id)
+            .single();
+
+        if (fetchError || !existingCard) {
+            return res.status(404).json({ error: "❌ الفلاش كارد غير موجود" });
+        }
+
+        if (existingCard.user_id !== userId) {
+            return res.status(403).json({ error: "❌ ليس لديك إذن لتعديل هذا الفلاش كارد" });
+        }
+
+        // تحديث الفلاش كارد
         const { data, error } = await supabase
             .from("flashcards")
-            .select("*")
-            .eq("user_id", userId);
+            .update({ question, answer })
+            .eq("id", id);
 
-        if (error) {
-            console.error("🔥 Supabase Error:", error);
-            return res.status(500).json({ error: error.message });
-        }
+        if (error) return res.status(400).json({ error: error.message });
 
-        if (!data || data.length === 0) {
-            return res.status(404).json({ message: "No flashcards found for this user." });
-        }
-
-        console.log("✅ Flashcards retrieved for user:", data);
-        res.json({ flashcards: data });
-
-    } catch (err) {
-        console.error("🚨 Unexpected error:", err);
-        res.status(500).json({ error: "An unexpected error occurred!" });
+        res.status(200).json({ message: "✅ تم تحديث الفلاش كارد بنجاح", flashcard: data });
+    } catch (error) {
+        res.status(500).json({ error: "❌ خطأ في تحديث الفلاش كارد: " + error.message });
     }
-}
+};
 
-module.exports = { generateFlashcards, getFlashcardsByFile, getFlashcardsByUser };
+// ✅ حذف فلاش كارد معين
+exports.deleteFlashcard = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+
+        // التحقق من ملكية المستخدم للفلاش كارد
+        const { data: existingCard, error: fetchError } = await supabase
+            .from("flashcards")
+            .select("user_id")
+            .eq("id", id)
+            .single();
+
+        if (fetchError || !existingCard) {
+            return res.status(404).json({ error: "❌ الفلاش كارد غير موجود" });
+        }
+
+        if (existingCard.user_id !== userId) {
+            return res.status(403).json({ error: "❌ ليس لديك إذن لحذف هذا الفلاش كارد" });
+        }
+
+        // حذف الفلاش كارد
+        const { error } = await supabase
+            .from("flashcards")
+            .delete()
+            .eq("id", id);
+
+        if (error) return res.status(400).json({ error: error.message });
+
+        res.status(200).json({ message: "✅ تم حذف الفلاش كارد بنجاح" });
+    } catch (error) {
+        res.status(500).json({ error: "❌ خطأ في حذف الفلاش كارد: " + error.message });
+    }
+};

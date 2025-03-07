@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FcGoogle } from "react-icons/fc";
 import Image from "next/image";
 import Link from "next/link";
-import supabase from "@/utils/supabaseClient"; // ✅ استيراد supabase
+import {supabase} from "@/utils/supabaseClient"; // ✅ استيراد supabase
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");

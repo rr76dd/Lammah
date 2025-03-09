@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import supabase from "@/utils/supabaseClient";
+import { supabase } from "@/utils/supabaseClient";
 
 // ✅ تحديد نوع بيانات الاختبار والملفات
 interface Quiz {
@@ -32,6 +32,17 @@ export default function QuizzesPage() {
   const [error, setError] = useState("");
   const [showDialog, setShowDialog] = useState(false);
   const router = useRouter();
+
+  // ✅ التحقق من تسجيل الدخول
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) {
+        router.replace("/auth-login");
+      }
+    };
+    checkUser();
+  }, [router]);
 
   // ✅ جلب قائمة الملفات من Supabase
   useEffect(() => {

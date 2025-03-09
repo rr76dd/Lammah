@@ -44,6 +44,17 @@ export default function FileViewer() {
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<ProcessingResult | null>(null);
 
+  // ✅ التحقق من تسجيل الدخول
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) {
+        router.replace("/auth-login");
+      }
+    };
+    checkUser();
+  }, [router]);
+
   useEffect(() => {
     fetchFileDetails();
   }, [id]);
@@ -149,7 +160,7 @@ export default function FileViewer() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden" dir="rtl">
+    <div className="flex h-screen bg-gray-50 overflow-hidden pt-20" dir="rtl">
       <Sidebar />
       
       <main className="flex-1 overflow-y-auto pb-16">

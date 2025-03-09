@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react"; // ✅ إضافة هذا السطر لحل المشكلة
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Library, MessageSquare, Settings } from "lucide-react";
+import { BookOpenText, MessageSquareText, Settings, Menu, X, PencilRuler} from "lucide-react";
 
 // 🛠️ تعريف الواجهة للرابط الجانبي
 interface SidebarLinkProps {
@@ -16,10 +16,14 @@ interface SidebarLinkProps {
 // ✅ مكون Sidebar
 export function Sidebar() {
   const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth >= 768) {
+        setIsMenuOpen(false);
+      }
     };
 
     handleResize();
@@ -28,18 +32,49 @@ export function Sidebar() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const toggleMenu = () => {
+    setIsMenuOpen(!isMenuOpen);
+  };
+
   return (
-    <aside
-      className={`bg-black text-white p-6 ${
-        isMobile ? "fixed bottom-0 w-full flex justify-around py-3" : "w-50 h-screen shadow-xl flex flex-col"
+    <header
+      className={`bg-black text-white z-50 ${
+        isMobile 
+          ? "fixed top-0 w-full p-4 shadow-md" 
+          : "fixed top-0 w-full shadow-xl flex items-center justify-between px-6 py-3"
       }`}
     >
-      <nav className={`space-y-3 ${isMobile ? "flex space-x-6 justify-center w-full" : ""}`}>
-        <SidebarLink href="/dashboard" label="المكتبة" icon={<Library size={20} />} />
-        <SidebarLink href="/chat" label="المحادثة" icon={<MessageSquare size={20} />} />
-        <SidebarLink href="/settings" label="الإعدادات" icon={<Settings size={20} />} />
-      </nav>
-    </aside>
+      <div className="flex items-center justify-between w-full">
+        <div className="font-bold text-xl px-5">لماح</div>
+        
+        {isMobile ? (
+          <button 
+            onClick={toggleMenu} 
+            className="p-2 rounded-lg hover:bg-gray-800 transition-colors"
+            aria-label={isMenuOpen ? "إغلاق القائمة" : "فتح القائمة"}
+          >
+            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        ) : (
+          <nav className="flex items-center space-x-6 space-x-reverse">
+            <SidebarLink href="/dashboard" label="المكتبة" icon={<BookOpenText size={20} />} />
+            <SidebarLink href="/chat" label="المحادثة" icon={<MessageSquareText size={20} />} />
+            <SidebarLink href="/tools" label="الأدوات" icon={<PencilRuler  size={20} />} />
+            <SidebarLink href="/settings" label="الإعدادات" icon={<Settings size={20} />} />
+          </nav>
+        )}
+      </div>
+
+      {/* Mobile Menu */}
+      {isMobile && isMenuOpen && (
+        <nav className="fixed top-16 left-0 right-0 bg-black shadow-xl p-4 space-y-2 z-40 rounded-b-lg">
+          <SidebarLink href="/dashboard" label="المكتبة" icon={<BookOpenText size={20} />} />
+          <SidebarLink href="/chat" label="المحادثة" icon={<MessageSquareText size={20} />} />
+          <SidebarLink href="/tools" label="الأدوات" icon={<PencilRuler  size={20} />} />
+          <SidebarLink href="/settings" label="الإعدادات" icon={<Settings size={20} />} />
+        </nav>
+      )}
+    </header>
   );
 }
 

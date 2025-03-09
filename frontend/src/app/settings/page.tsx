@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
-import { Twitter, Mail, Shield, LogOut, Camera, Save, User } from "lucide-react";
+import { Mail, Shield, LogOut, Camera, Save, User,TriangleAlert } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { supabase } from "@/utils/supabaseClient";
+import { useRouter } from "next/navigation";
 
 export default function SettingsPage() {
   // User data
@@ -24,17 +25,25 @@ export default function SettingsPage() {
     },
     theme: "light",
   });
-
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(user.name);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const router = useRouter();
+  // ✅ التحقق من تسجيل الدخول
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) {
+        router.replace("/auth-login");
+      }
+    };
+    checkUser();
+  }, [router]);
   // Update username while typing
   const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setTempName(event.target.value);
   };
-
   // Save new name
   const saveName = async () => {
     if (!tempName.trim()) {
@@ -43,8 +52,7 @@ export default function SettingsPage() {
       });
       return;
     }
-
-    setIsLoading(true);
+  setIsLoading(true);
     
     // Simulate API call
     try {
@@ -68,21 +76,18 @@ export default function SettingsPage() {
       setIsLoading(false);
     }
   };
-
   // Save on Enter key
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       saveName();
     }
   };
-
   // Open file selector when clicking on avatar
   const handleAvatarClick = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
-
   // Update avatar when new image is selected
   const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -93,8 +98,7 @@ export default function SettingsPage() {
         });
         return;
       }
-
-      setIsLoading(true);
+  setIsLoading(true);
       
       // Simulate API upload
       try {
@@ -119,34 +123,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle notification toggles
-  const toggleNotification = (type: 'email' | 'app') => {
-    setUser(prev => ({
-      ...prev,
-      notifications: {
-        ...prev.notifications,
-        [type]: !prev.notifications[type]
-      }
-    }));
-    
-    toast.success("تم التحديث", {
-      description: `تم تحديث إعدادات الإشعارات بنجاح`,
-    });
-  };
-
-  // Handle theme toggle
-  const toggleTheme = () => {
-    const newTheme = user.theme === 'light' ? 'dark' : 'light';
-    setUser(prev => ({
-      ...prev,
-      theme: newTheme
-    }));
-    
-    toast.success("تم التحديث", {
-      description: `تم تغيير المظهر إلى النمط ${newTheme === 'light' ? 'الفاتح' : 'الداكن'}`,
-    });
-  };
-
   // Handle logout
   const handleLogout = () => {
     // Replace with actual logout logic
@@ -158,9 +134,8 @@ export default function SettingsPage() {
       window.location.href = '/';
     }, 1500);
   };
-
   return (
-    <div className="flex h-screen bg-white text-black overflow-hidden" dir="rtl">
+    <div className="flex h-screen bg-white text-black overflow-hidden pt-20" dir="rtl">
       {/* Sidebar */}
       <Sidebar />
 
@@ -256,39 +231,6 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Notification settings */}
-        <Card className="mb-6 w-full max-w-2xl bg-white text-black shadow-lg rounded-xl border border-gray-200">
-          <CardHeader>
-            <CardTitle className="text-xl font-bold">إعدادات الإشعارات</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="email-notifications" className="text-gray-800">إشعارات البريد الإلكتروني</Label>
-              <Switch 
-                id="email-notifications" 
-                checked={user.notifications.email}
-                onCheckedChange={() => toggleNotification('email')}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="app-notifications" className="text-gray-800">إشعارات التطبيق</Label>
-              <Switch 
-                id="app-notifications" 
-                checked={user.notifications.app}
-                onCheckedChange={() => toggleNotification('app')}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="theme-toggle" className="text-gray-800">المظهر الداكن</Label>
-              <Switch 
-                id="theme-toggle" 
-                checked={user.theme === 'dark'}
-                onCheckedChange={toggleTheme}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
         {/* About the website */}
         <Card className="mb-6 w-full max-w-2xl bg-white text-black shadow-lg rounded-xl border border-gray-200">
           <CardHeader>
@@ -308,16 +250,20 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-gray-800 mb-4">تابع حساباتنا على تويتر:</p>
-            <div className="flex flex-col sm:flex-row gap-4 mb-4">
-              <Link href="https://twitter.com/lammah_ai" target="_blank" className="w-full">
-                <Button className="bg-[#1DA1F2] hover:bg-[#1a91da] text-white flex items-center justify-center gap-2 w-full">
-                  <Twitter className="w-5 h-5 text-white" />
+            <div className="flex flex-row gap-4 mb-4">
+              <Link href="https://twitter.com/lammah_ai" target="_blank" className="w-1/2">
+                <Button className="bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2 w-full">
+                  <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                  </svg>
                   <span>حساب لماح</span>
                 </Button>
               </Link>
-              <Link href="https://twitter.com/dev_twitter" target="_blank" className="w-full">
-                <Button className="bg-[#1DA1F2] hover:bg-[#1a91da] text-white flex items-center justify-center gap-2 w-full">
-                  <Twitter className="w-5 h-5 text-white" />
+              <Link href="https://twitter.com/rr76dd" target="_blank" className="w-1/2">
+                <Button className="bg-black hover:bg-gray-800 text-white flex items-center justify-center gap-2 w-full">
+                  <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                  </svg>
                   <span>حساب المطور</span>
                 </Button>
               </Link>
@@ -338,17 +284,20 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-4">
-              <a href="mailto:support@lammah.com" className="w-full">
-                <Button variant="outline" className="border border-gray-300 hover:bg-gray-100 text-black flex items-center justify-center gap-2 w-full">
-                  <span>الإبلاغ عن مشكلة</span>
-                </Button>
-              </a>
-              <Link href="/privacy-policy" className="w-full">
-                <Button variant="outline" className="border border-gray-300 hover:bg-gray-100 text-black flex items-center justify-center gap-2 w-full">
-                  <Shield className="w-5 h-5" />
-                  <span>سياسة الخصوصية</span>
-                </Button>
-              </Link>
+              <div className="flex gap-4">
+                <a href="mailto:support@lammah.com" className="w-1/2">
+                  <Button variant="outline" className="border border-gray-300 hover:bg-gray-100 text-black flex items-center justify-center gap-2 w-full">
+                    <TriangleAlert className="w-5 h-5" />
+                    <span>الإبلاغ عن مشكلة</span>
+                  </Button>
+                </a>
+                <Link href="/privacy-policy" className="w-1/2">
+                  <Button variant="outline" className="border border-gray-300 hover:bg-gray-100 text-black flex items-center justify-center gap-2 w-full">
+                    <Shield className="w-5 h-5" />
+                    <span>سياسة الخصوصية</span>
+                  </Button>
+                </Link>
+              </div>
               
               {/* Logout */}
               <Button 
@@ -362,7 +311,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        <div className="mt-4 text-center pb-40 sm:pb-10">
+        <div className="mt-4 text-center pb-20">
           <span className="text-gray-500 text-sm">
             لماح - الإصدار 1.0.0 | صنع بـ ❤️ بواسطة فهد
           </span>

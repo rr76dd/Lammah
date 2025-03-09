@@ -59,7 +59,6 @@ const FileCard = ({ file, onDelete }: { file: FileData; onDelete: (id: string, p
           e.stopPropagation();
           e.preventDefault();
           const fileName = file.file_name || file.name;
-          const folderName = file.folder_name;
           const safePath = `${file.folder_name}/${file.id}-${fileName}`;
           onDelete(file.id, safePath);
         }}
@@ -80,6 +79,17 @@ export default function Dashboard() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const router = useRouter();
 
+  // ✅ التحقق من تسجيل الدخول
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData?.user) {
+        router.replace("/auth-login");
+      }
+    };
+    checkUser();
+  }, [router]);
+  
   useEffect(() => {
     updateFiles();
   }, []);
@@ -99,6 +109,7 @@ export default function Dashboard() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const ALLOWED_FILE_TYPES = [
     'application/pdf',
     'application/msword',
@@ -280,7 +291,7 @@ export default function Dashboard() {
       );
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden" dir="rtl">
+    <div className="flex h-screen bg-gray-50 overflow-hidden pt-20" dir="rtl">
       <Sidebar />
       
       <main className="flex-1 overflow-y-auto pb-16">
@@ -318,7 +329,7 @@ export default function Dashboard() {
                   />
                   <button
                     onClick={() => document.getElementById("fileUpload")?.click()}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition-colors duration-200"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-black text-white font-medium rounded-lg shadow-sm hover:bg-gray-700 transition-colors duration-200"
                     disabled={loading}
                   >
                     {loading ? (
@@ -364,7 +375,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="bg-white shadow-sm rounded-2xl p-12 text-center">
-              <div className="inline-flex items-center justify-center p-4 bg-blue-50 rounded-full text-blue-500 mb-4">
+              <div className="inline-flex items-center justify-center p-4 bg-black rounded-full text-white mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
                 </svg>
@@ -373,7 +384,7 @@ export default function Dashboard() {
               <p className="text-gray-500 mt-2 mb-6">اضغط على زر رفع ملفات لإضافة ملفاتك الجديدة</p>
               <button
                 onClick={() => document.getElementById("fileUpload")?.click()}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg shadow-sm hover:bg-blue-700 transition-colors duration-200"
+                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-black text-white font-medium rounded-lg shadow-sm hover:bg-gray-700 transition-colors duration-200"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />

@@ -113,7 +113,7 @@ export default function LoginPage() {
               >
                 {loading ? "جاري تسجيل الدخول..." : "تسجيل الدخول"}
               </Button>
-              <div className="text-center text-gray-500 text-lg">أو</div>
+              {/* <div className="text-center text-gray-500 text-lg">أو</div>
               <Button
                 className="w-full flex items-center justify-center border border-gray-300 p-3 text-lg"
                 onClick={handleGoogleLogin}
@@ -121,7 +121,7 @@ export default function LoginPage() {
               >
                 <FcGoogle className="text-2xl mr-2" />
                 تسجيل الدخول عبر Google
-              </Button>
+              </Button> */}
 
               {/* رابط التسجيل */}
               <p className="text-center text-sm mt-4">

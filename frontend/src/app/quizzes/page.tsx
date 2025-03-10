@@ -105,33 +105,37 @@ export default function QuizzesPage() {
     setError("");
 
     try {
-      // 🔹 جلب محتوى الملف المحدد
       const file = files.find(f => f.id === selectedFile);
       if (!file) throw new Error("❌ الملف غير موجود.");
 
-      // 🔹 إرسال محتوى الملف إلى API الذكاء الاصطناعي للحصول على عنوان مناسب وإنشاء الأسئلة
-      const response = await fetch("/api/generate-quiz", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/process-file`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: file.content }),
+        body: JSON.stringify({
+          fileId: file.id,
+          action: "quiz",
+          fileContent: file.content // Using content from FileData interface
+        }),
       });
 
-      const { quiz, title } = await response.json();
-      if (!quiz || !title) throw new Error("❌ فشل في إنشاء الاختبار.");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "❌ فشل في معالجة الملف.");
+      }
 
-      // ✅ حفظ الاختبار الجديد في Supabase بعنوان ذكي
-      const { error: insertError } = await supabase.from("quizzes").insert([{ 
-        title: title, // 🔥 العنوان الذكي المستخرج من المحتوى
-        difficulty: "متوسط", 
-        questions: quiz.questions 
-      }]);
+      const { result } = await response.json();
+      if (!result || !result.quizId || !result.title) {
+        throw new Error("❌ فشل في إنشاء الاختبار.");
+      }
 
-      if (insertError) throw insertError;
-
-      fetchQuizzes();
+      // Refresh the quizzes list
+      await fetchQuizzes();
+      
+      // Show success message
+      setError(""); // Clear any previous errors
     } catch (err) {
       console.error("❌ خطأ أثناء إنشاء الاختبار:", err);
-      setError("❌ حدث خطأ أثناء إنشاء الاختبار.");
+      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : "❌ حدث خطأ أثناء إنشاء الاختبار.");
     } finally {
       setGenerating(false);
     }

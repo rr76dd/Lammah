@@ -1,9 +1,18 @@
 import { NextApiRequest, NextApiResponse } from "next";
 
-// ✅ احصل على مفتاح API من `.env.local`
+if (!process.env.OPENROUTER_API_KEY) {
+  throw new Error('OPENROUTER_API_KEY is not defined in environment variables');
+}
+if (!process.env.SITE_URL) {
+  throw new Error('SITE_URL is not defined in environment variables');
+}
+if (!process.env.SITE_NAME) {
+  throw new Error('SITE_NAME is not defined in environment variables');
+}
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const SITE_URL = process.env.SITE_URL || "https://your-website.com";
-const SITE_NAME = process.env.SITE_NAME || "Lammah";
+const SITE_URL = process.env.SITE_URL;
+const SITE_NAME = process.env.SITE_NAME;
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "qwen/qwen2.5-vl-72b-instruct:free";
 
@@ -23,7 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        "HTTP-Referer": SITE_URL, // للمساعدة في ترتيب الموقع
+        "HTTP-Referer": SITE_URL,
         "X-Title": SITE_NAME,
         "Content-Type": "application/json",
       },
@@ -37,8 +46,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }),
     });
 
+    if (!titleResponse.ok) {
+      const errorData = await titleResponse.json().catch(() => ({}));
+      console.error("OpenRouter API Error:", {
+        status: titleResponse.status,
+        statusText: titleResponse.statusText,
+        error: errorData
+      });
+      throw new Error(`فشل في الاتصال بـ OpenRouter: ${titleResponse.statusText}`);
+    }
+
     const titleData = await titleResponse.json();
-    const generatedTitle = titleData.choices?.[0]?.message?.content?.trim() || "اختبار عام";
+    if (!titleData || !Array.isArray(titleData.choices) || titleData.choices.length === 0) {
+      throw new Error("فشل في تحليل استجابة API لتوليد العنوان");
+    }
+    const generatedTitle = titleData.choices[0]?.message?.content?.trim() || "اختبار عام";
 
     // ✅ الخطوة 2: توليد 20 سؤال اختيار من متعدد
     const quizResponse = await fetch(OPENROUTER_API_URL, {
@@ -52,16 +74,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       body: JSON.stringify({
         model: MODEL,
         messages: [
-          { role: "system", content: "قم بإنشاء 20 سؤال اختيار من متعدد بناءً على هذا المحتوى، مع 4 خيارات لكل سؤال وإجابة صحيحة." },
+          { role: "system", content: "قم بإنشاء 20 سؤال اختيار من متعدد بناءً على هذا المحتوى، مع 4 خيارات لكل سؤال وإجابة صحيحة. استخدم الصيغة التالية:\n1. السؤال\n- الخيار الأول\n- الخيار الثاني\n- الخيار الثالث\n- الخيار الرابع\n✅ الإجابة الصحيحة" },
           { role: "user", content },
         ],
-        max_tokens: 1000,
+        max_tokens: 2000,
+        temperature: 0.7,
       }),
     });
 
+    if (!quizResponse.ok) {
+      const errorData = await quizResponse.json().catch(() => ({}));
+      console.error("OpenRouter API Error:", {
+        status: quizResponse.status,
+        statusText: quizResponse.statusText,
+        error: errorData
+      });
+      throw new Error(`فشل في الاتصال بـ OpenRouter: ${quizResponse.statusText}`);
+    }
+
     const quizData = await quizResponse.json();
-    const quizText = quizData.choices?.[0]?.message?.content?.trim();
-    if (!quizText) throw new Error("❌ فشل في توليد الأسئلة!");
+    if (!quizData || !Array.isArray(quizData.choices) || quizData.choices.length === 0) {
+      throw new Error("فشل في تحليل استجابة API لتوليد الأسئلة");
+    }
+    const quizText = quizData.choices[0]?.message?.content?.trim();
+    if (!quizText) throw new Error("فشل في توليد الأسئلة!");
 
     // ✅ تحليل الأسئلة وتحويلها إلى JSON
     const questions = parseQuizData(quizText);

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { Inter } from "next/font/google";
-import "./globals.css";
+import "@/app/globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 

@@ -98,14 +98,18 @@ export default function FileViewer() {
     setResult(null);
 
     try {
+      // Prepare request payload with both fileUrl and content if available
+      const payload = {
+        fileId: file.id,
+        action,
+        fileUrl: file.file_url || file.url,
+        fileContent: file.content || undefined
+      };
+
       const response = await fetch(`/api/process-file`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileId: file.id,
-          action,
-          fileUrl: file.file_url || file.url
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
@@ -120,6 +124,10 @@ export default function FileViewer() {
       // Redirect to appropriate page based on action
       if (action === "quiz") {
         router.push(`/quizzes/${data.result.quizId}`);
+      } else if (action === "flashcards") {
+        router.push(`/flashcards/${file.id}`);
+      } else if (action === "summary") {
+        router.push(`/summary/${file.id}`);
       }
     } catch (err) {
       console.error(`❌ Error processing file for ${action}:`, err);

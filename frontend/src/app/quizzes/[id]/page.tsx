@@ -4,10 +4,19 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import supabase from "@/utils/supabaseClient";
+import {supabase} from "@/utils/supabaseClient";
 
 // ✅ تعريف هيكل البيانات
 interface Question {
+  question?: string;
+  text?: string;
+  choices?: string[];
+  options?: string[];
+  correctAnswer?: string;
+  correct_answer?: string;
+}
+
+interface NormalizedQuestion {
   text: string;
   choices: string[];
   correctAnswer: string;
@@ -16,19 +25,21 @@ interface Question {
 interface Quiz {
   id: string;
   title: string;
-  difficulty: string;
-  questions: Question[];
+  difficulty?: string;
+  questions: NormalizedQuestion[]; // Now always an array of normalized questions
 }
 
 export default function QuizDetailsPage() {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [userAnswers, setUserAnswers] = useState<{ [key: number]: string }>({});
-  const [score, setScore] = useState<number | null>(null);
-  const [showResults, setShowResults] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const router = useRouter();
-  const { id } = useParams<{ id: string }>(); // ✅ جلب ID الاختبار مع النوع الصحيح
+  const { id } = useParams();
+
+  // Calculate total questions and current progress
+  const totalQuestions = quiz?.questions?.length || 0;
+  const currentQuestion = quiz?.questions?.[currentQuestionIndex];
 
   // ✅ التحقق من تسجيل الدخول
   useEffect(() => {
@@ -58,10 +69,47 @@ export default function QuizDetailsPage() {
 
         if (error) throw error;
 
-        setQuiz(data as Quiz);
+        // Parse questions if they're stored as a JSON string
+        let parsedQuestions: Question[] = [];
+        
+        if (typeof data.questions === 'string') {
+          try {
+            parsedQuestions = JSON.parse(data.questions);
+          } catch (parseError) {
+            console.error('Error parsing questions JSON:', parseError);
+            throw new Error('فشل في تحليل بيانات الأسئلة');
+          }
+        } else if (Array.isArray(data.questions)) {
+          parsedQuestions = data.questions;
+        }
+
+        if (!parsedQuestions || parsedQuestions.length === 0) {
+          throw new Error('لا توجد أسئلة في هذا الاختبار');
+        }
+        
+        // Normalize question format
+        const normalizedQuestions: NormalizedQuestion[] = parsedQuestions.map(q => ({
+          text: q.question || q.text || 'No question text',
+          choices: q.choices || q.options || [],
+          correctAnswer: q.correctAnswer || q.correct_answer || ''
+        }));
+
+        // Validate questions
+        normalizedQuestions.forEach((q, index) => {
+          if (!q.text || !Array.isArray(q.choices) || q.choices.length === 0 || !q.correctAnswer) {
+            throw new Error(`السؤال رقم ${index + 1} غير مكتمل`);
+          }
+        });
+
+        setQuiz({
+          id: data.id,
+          title: data.title || 'اختبار',
+          difficulty: data.difficulty,
+          questions: normalizedQuestions
+        });
       } catch (err) {
-        console.error("❌ خطأ أثناء تحميل الاختبار:", err);
-        setError("❌ لم يتم العثور على الاختبار.");
+        console.error("Error loading quiz:", err);
+        setError(err instanceof Error ? err.message : "فشل في تحميل الاختبار");
       } finally {
         setLoading(false);
       }
@@ -70,109 +118,125 @@ export default function QuizDetailsPage() {
     fetchQuiz();
   }, [id]);
 
-  // ✅ تحديث إجابة المستخدم لكل سؤال
-  const handleAnswerSelect = (questionIndex: number, choice: string) => {
-    setUserAnswers({ ...userAnswers, [questionIndex]: choice });
+  // Navigation between questions
+  const navigateToQuestion = (index: number) => {
+    if (index >= 0 && index < totalQuestions) {
+      setCurrentQuestionIndex(index);
+    }
   };
 
-  // ✅ حساب النتيجة النهائية وتحليل الإجابات
-  const calculateScore = () => {
-    if (!quiz) return;
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <p className="text-xl text-gray-600">جاري تحميل الاختبار...</p>
+      </div>
+    );
+  }
 
-    let correctAnswers = 0;
-    quiz.questions.forEach((question, index) => {
-      if (userAnswers[index] === question.correctAnswer) {
-        correctAnswers++;
-      }
-    });
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <p className="text-red-500 text-xl mb-4">{error}</p>
+        <Button onClick={() => router.push('/quizzes')}>
+          العودة إلى قائمة الاختبارات
+        </Button>
+      </div>
+    );
+  }
 
-    setScore((correctAnswers / quiz.questions.length) * 100); // ✅ نسبة النتيجة من 100%
-    setShowResults(true);
-  };
+  if (!quiz || !currentQuestion) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <p className="text-xl text-gray-600">لا يوجد اختبار متاح</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col items-center min-h-screen bg-gray-100 p-6">
-      <Card className="w-full max-w-3xl p-6 shadow-lg">
+    <div className="container mx-auto px-4 py-8">
+      <Card className="w-full max-w-4xl mx-auto">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center">حل الاختبار</CardTitle>
+          <CardTitle className="text-2xl font-bold text-center">
+            {quiz.title} - مراجعة
+          </CardTitle>
+          <div className="flex justify-between items-center mt-4">
+            <p className="text-gray-600">
+              مستوى الصعوبة: {
+                quiz.difficulty === 'easy' ? 'سهل' :
+                quiz.difficulty === 'medium' ? 'متوسط' :
+                'صعب'
+              }
+            </p>
+            <p className="text-gray-600">
+              السؤال {currentQuestionIndex + 1} من {totalQuestions}
+            </p>
+          </div>
         </CardHeader>
+
         <CardContent>
-          {/* ✅ عرض رسالة الخطأ إن وجدت */}
-          {error && <p className="text-red-500 text-center">{error}</p>}
+          {/* Question Navigation */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {quiz.questions.map((_, index) => (
+              <Button
+                key={index}
+                onClick={() => navigateToQuestion(index)}
+                className={`w-10 h-10 ${
+                  currentQuestionIndex === index
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100'
+                }`}
+              >
+                {index + 1}
+              </Button>
+            ))}
+          </div>
 
-          {/* ✅ عرض معلومات الاختبار */}
-          {loading ? (
-            <p className="text-center text-gray-600">جاري تحميل الاختبار...</p>
-          ) : quiz ? (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold text-center">{quiz.title}</h2>
-              <p className="text-gray-600 text-center">مستوى الصعوبة: {quiz.difficulty}</p>
-
-              {/* ✅ عرض الأسئلة */}
-              <div className="space-y-4 mt-6">
-                <h3 className="text-lg font-semibold">الأسئلة:</h3>
-                {quiz.questions?.length > 0 ? (
-                  <ul className="space-y-4">
-                    {quiz.questions.map((question, index) => (
-                      <li key={index} className="border p-4 rounded shadow-sm">
-                        <p className="font-semibold">{index + 1}. {question.text}</p>
-                        <div className="mt-2 space-y-2">
-                          {question.choices.map((choice, i) => (
-                            <Button
-                              key={i}
-                              className={`w-full ${
-                                userAnswers[index] === choice 
-                                  ? "bg-blue-500 text-white" 
-                                  : "bg-gray-200"
-                              }`}
-                              onClick={() => handleAnswerSelect(index, choice)}
-                            >
-                              {choice}
-                            </Button>
-                          ))}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-gray-500">لا يوجد أسئلة في هذا الاختبار</p>
-                )}
-              </div>
+          {/* Current Question */}
+          <div className="border p-6 rounded-lg shadow-sm">
+            <p className="text-lg mb-6">{currentQuestion.text}</p>
+            
+            <div className="space-y-3">
+              {currentQuestion.choices.map((choice, choiceIndex) => (
+                <div
+                  key={choiceIndex}
+                  className={`p-3 rounded-lg ${
+                    choice === currentQuestion.correctAnswer
+                      ? 'bg-green-100 border-green-500'
+                      : 'bg-gray-100'
+                  }`}
+                >
+                  {choice}
+                  {choice === currentQuestion.correctAnswer && (
+                    <span className="text-green-600 ml-2">✓ الإجابة الصحيحة</span>
+                  )}
+                </div>
+              ))}
             </div>
-          ) : (
-            <p className="text-center text-gray-500">لا يوجد بيانات متاحة</p>
-          )}
+          </div>
 
-          {/* ✅ زر لحساب النتيجة وعرضها */}
-          {quiz && quiz.questions.length > 0 && !showResults && (
-            <Button className="mt-6 bg-green-600 text-white w-full" onClick={calculateScore}>
-              تقديم الاختبار وعرض النتيجة
+          {/* Navigation Buttons */}
+          <div className="flex justify-between mt-6">
+            <Button
+              onClick={() => navigateToQuestion(currentQuestionIndex - 1)}
+              disabled={currentQuestionIndex === 0}
+              className="bg-gray-500"
+            >
+              السؤال السابق
             </Button>
-          )}
-
-          {/* ✅ عرض النتيجة بعد التقديم */}
-          {showResults && (
-            <div className="mt-6 text-center">
-              <p className="text-xl font-bold">نتيجتك: {score?.toFixed(2)}%</p>
-              <p className="text-gray-600">تحليل الإجابات:</p>
-              <ul className="mt-4 space-y-2">
-                {quiz?.questions.map((question, index) => (
-                  <li key={index} className={`p-3 rounded ${userAnswers[index] === question.correctAnswer ? "bg-green-100" : "bg-red-100"}`}>
-                    <p className="font-semibold">{question.text}</p>
-                    <p>إجابتك: {userAnswers[index]}</p>
-                    <p className="font-semibold">
-                      {userAnswers[index] === question.correctAnswer ? "✅ إجابة صحيحة" : `❌ الإجابة الصحيحة: ${question.correctAnswer}`}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* زر الرجوع إلى قائمة الاختبارات */}
-          <Button className="mt-6 bg-blue-600 text-white w-full" onClick={() => router.push("/quizzes")}>
-            الرجوع إلى قائمة الاختبارات
-          </Button>
+            <Button
+              onClick={() => router.push('/quizzes')}
+              className="bg-blue-600"
+            >
+              العودة إلى قائمة الاختبارات
+            </Button>
+            <Button
+              onClick={() => navigateToQuestion(currentQuestionIndex + 1)}
+              disabled={currentQuestionIndex === totalQuestions - 1}
+              className="bg-gray-500"
+            >
+              السؤال التالي
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

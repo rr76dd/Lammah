@@ -18,7 +18,7 @@ export default function SettingsPage() {
   const [user, setUser] = useState({
     name: "اسم المستخدم",
     email: "user@example.com",
-    avatar: "/avatar-placeholder.png",
+    avatar: "/images/avatars/avatar-placeholder.svg",
     notifications: {
       email: true,
       app: true,

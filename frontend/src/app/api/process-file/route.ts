@@ -1,6 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/utils/supabaseClient';
 import { v4 as uuidv4 } from 'uuid';
+import { extractTextFromPDF, isValidArabicText } from '@/utils/pdfProcessor';
+
+// Validate environment variables at the top level
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+// Configure route options
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // Define interfaces for type safety
 interface ProcessFileRequest {
@@ -19,9 +28,106 @@ interface QuizQuestion {
   correct_answer?: string;
 }
 
+// Simple test endpoint to verify the API is working
+export async function GET() {
+  return NextResponse.json({ status: 'API route is working' });
+}
+
+// Main POST handler
+export async function POST(request: NextRequest) {
+  console.log('POST request received at /api/process-file');
+  
+  try {
+    // Validate API key exists
+    if (!OPENROUTER_API_KEY) {
+      console.error('OpenRouter API key is missing');
+      return NextResponse.json(
+        { error: 'OpenRouter API key is not configured. Please check your environment variables.' },
+        { status: 500 }
+      );
+    }
+
+    // Parse request body
+    const body = await request.json() as ProcessFileRequest;
+    console.log('Request body:', body);
+    
+    const { fileId, action, fileContent, fileUrl } = body;
+
+    // Validate required fields
+    if (!fileId || !action || (!fileContent && !fileUrl)) {
+      return NextResponse.json(
+        { error: 'يجب توفير معرف الملف ونوع المعالجة ومحتوى الملف أو رابط الملف' },
+        { status: 400 }
+      );
+    }
+
+    if (!['quiz', 'summary', 'flashcards'].includes(action)) {
+      return NextResponse.json(
+        { error: 'نوع المعالجة غير صالح' },
+        { status: 400 }
+      );
+    }
+
+    // Extract text from file if needed
+    let content = fileContent;
+    if (!content && fileUrl) {
+      try {
+        content = await extractTextFromFile(fileUrl);
+      } catch (error) {
+        console.error('Error extracting text from file:', error);
+        return NextResponse.json(
+          { error: 'فشل في استخراج محتوى الملف من الرابط' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Process content based on action
+    let result;
+    switch (action) {
+      case 'quiz':
+        if (!content) {
+          throw new Error('Content is required for quiz generation');
+        }
+        result = await generateQuiz(content, fileId);
+        break;
+      case 'summary':
+        if (!content) {
+          throw new Error('Content is required for summary generation');
+        }
+        result = await generateSummary(content, fileId);
+        break;
+      case 'flashcards':
+        if (!content) {
+          throw new Error('Content is required for flashcards generation');
+        }
+        result = await generateFlashcards(content, fileId);
+        break;
+      default:
+        return NextResponse.json(
+          { error: 'نوع المعالجة غير مدعوم حاليًا' },
+          { status: 400 }
+        );
+    }
+
+    console.log('Processing successful:', action);
+    return NextResponse.json({ result });
+  } catch (error) {
+    console.error('Error in POST handler:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    const statusCode = errorMessage.includes('authentication failed') ? 401 : 500;
+    
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: statusCode }
+    );
+  }
+}
+
 // Helper function to extract text content from file
 async function extractTextFromFile(fileUrl: string): Promise<string> {
   try {
+    console.log('Extracting text from file:', fileUrl);
     const response = await fetch(fileUrl);
     if (!response.ok) {
       throw new Error(`فشل في جلب الملف: ${response.statusText}`);
@@ -31,7 +137,21 @@ async function extractTextFromFile(fileUrl: string): Promise<string> {
 
     if (contentType.includes('text/') || contentType.includes('application/json')) {
       text = await response.text();
-    } else if (contentType.includes('application/pdf') || contentType.includes('application/msword')) {
+    } else if (contentType.includes('application/pdf')) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const result = await extractTextFromPDF(buffer);
+      
+      if (result.error) {
+        throw new Error(`فشل في استخراج النص من ملف PDF: ${result.error}`);
+      }
+      
+      if (!result.text || !isValidArabicText(result.text)) {
+        throw new Error('لم يتم العثور على نص عربي صالح في الملف');
+      }
+      
+      text = result.text;
+      console.log(`PDF processed successfully${result.isOCR ? ' (using OCR)' : ''}`);
+    } else if (contentType.includes('application/msword')) {
       await response.blob();
       text = `محتوى مستخرج من ملف ${contentType}\n`;
       text += 'هذا محتوى تجريبي لغرض العرض.';
@@ -52,27 +172,53 @@ async function extractTextFromFile(fileUrl: string): Promise<string> {
 }
 
 // Generate quiz questions from text content
-async function generateQuiz(content: string, fileId: string) {
+async function generateQuiz(content: string, fileId: string, difficulty: string = 'medium') {
   try {
+    console.log('Generating quiz for file:', fileId);
     const quizId = uuidv4();
+
+    // Validate content is in Arabic
+    if (!isValidArabicText(content)) {
+      throw new Error('المحتوى يجب أن يكون باللغة العربية');
+    }
 
     // Call OpenRouter API to generate quiz content
     const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        'HTTP-Referer': APP_URL,
+        'X-Title': 'Lammah AI',
       },
       body: JSON.stringify({
         model: 'mistralai/mixtral-8x7b-instruct',
         messages: [{
           role: 'system',
-          content: 'You are a helpful AI that generates educational quizzes in Arabic. Create a quiz with 5 multiple choice questions based on the given content.'
+          content: `أنت مساعد ذكي متخصص في إنشاء اختبارات تعليمية باللغة العربية. قم بإنشاء اختبار بناءً على المحتوى المقدم.
+          اتبع هذه القواعد:
+          1. يجب أن تكون الأسئلة مستمدة حصراً من المحتوى المقدم
+          2. بالنسبة لمستوى ${difficulty}:
+             - سهل: 10 أسئلة فهم أساسية
+             - متوسط: 10 أسئلة متوسطة التعقيد
+             - صعب: 10 أسئلة تتطلب فهماً عميقاً
+          3. كل سؤال يجب أن يحتوي على 4 خيارات
+          4. قم بتنسيق الإجابة كـ JSON بهذا الشكل:
+          {
+            "questions": [
+              {
+                "text": "نص السؤال",
+                "choices": ["الخيار الأول", "الخيار الثاني", "الخيار الثالث", "الخيار الرابع"],
+                "correctAnswer": "الإجابة الصحيحة"
+              }
+            ]
+          }`
         }, {
           role: 'user',
-          content: `Generate a quiz in Arabic about this content:\n${content}`
-        }]
+          content: `قم بإنشاء اختبار بمستوى ${difficulty} باللغة العربية من هذا المحتوى:\n${content}`
+        }],
+        temperature: 0.7,
+        max_tokens: 2000
       })
     });
 
@@ -83,71 +229,67 @@ async function generateQuiz(content: string, fileId: string) {
         headers: Object.fromEntries(openRouterResponse.headers.entries()),
         error: errorBody
       });
-      throw new Error(`OpenRouter API Error: ${openRouterResponse.status} - ${errorBody.substring(0, 200)}`);
+      
+      if (openRouterResponse.status === 401) {
+        throw new Error('فشل في التحقق من مفتاح API');
+      }
+      throw new Error(`خطأ في توليد الأسئلة: ${openRouterResponse.status}`);
     }
 
     const aiResponse = await openRouterResponse.json();
     const generatedContent = aiResponse.choices[0].message.content;
 
-    // Format the AI response into a structured quiz format
+    // Parse and validate questions
     let questions;
     try {
-        // First attempt to parse as JSON
-        questions = JSON.parse(generatedContent).questions;
+      const parsed = JSON.parse(generatedContent);
+      questions = parsed.questions;
+
+      // Validate questions format
+      if (!Array.isArray(questions) || questions.length === 0) {
+        throw new Error('تنسيق الأسئلة غير صالح');
+      }
+
+      // Validate each question
+      questions = questions.map((q, index) => {
+        if (!q.text || !Array.isArray(q.choices) || q.choices.length !== 4 || !q.correctAnswer) {
+          throw new Error(`السؤال رقم ${index + 1} غير مكتمل`);
+        }
+        if (!q.choices.includes(q.correctAnswer)) {
+          throw new Error(`الإجابة الصحيحة للسؤال رقم ${index + 1} غير موجودة في الخيارات`);
+        }
+        return {
+          text: q.text,
+          choices: q.choices,
+          correctAnswer: q.correctAnswer
+        };
+      });
     } catch (parseError) {
-        // If JSON parsing fails, parse the text format
-        questions = parseQuizText(generatedContent);
+      console.error('Error parsing questions:', parseError);
+      throw new Error('فشل في تحليل الأسئلة المولدة');
     }
 
-    if (!questions || !Array.isArray(questions)) {
-        throw new Error('Invalid quiz format received from AI');
-    }
-
-    const formattedQuestions = questions.map(q => ({
-        question: typeof q.text === 'string' ? q.text : q.question,
-        options: Array.isArray(q.choices) ? q.choices : q.options || [],
-        correct_answer: q.correctAnswer || q.correct_answer
-    }));
-
-    // Validate questions format
-    if (!formattedQuestions.every(q => 
-        q.question && 
-        Array.isArray(q.options) && 
-        q.options.length > 0 && 
-        q.correct_answer
-    )) {
-        throw new Error('Invalid question format in AI response');
-    }
-
-    // Create quiz record
-    const { data: quizData, error: quizError } = await supabase
+    // Create quiz record in database
+    const { error: quizError } = await supabase
       .from('quizzes')
       .insert([{
         id: quizId,
-        title: `اختبار: ${content.substring(0, 50)}...`,
-        difficulty: 'متوسط',
-        file_id: fileId
-      }])
-      .select()
-      .single();
+        file_id: fileId,
+        title: `اختبار ${difficulty === 'easy' ? 'سهل' : difficulty === 'medium' ? 'متوسط' : 'صعب'}`,
+        difficulty: difficulty,
+        questions: questions
+      }]);
 
-    if (quizError) throw quizError;
+    if (quizError) {
+      console.error('Error saving quiz:', quizError);
+      throw new Error('فشل في حفظ الاختبار في قاعدة البيانات');
+    }
 
-    // Insert questions
-    const { error: questionsError } = await supabase
-      .from('quiz_questions')
-      .insert(
-        questions.map((q: { question: string; options: string[]; correct_answer: string }) => ({
-          quiz_id: quizId,
-          question: q.question,
-          options: q.options,
-          correct_answer: q.correct_answer
-        }))
-      );
-
-    if (questionsError) throw questionsError;
-
-    return { quizId, title: quizData.title };
+    return { 
+      quizId, 
+      questions,
+      totalQuestions: questions.length
+    };
   } catch (error) {
     console.error('Error generating quiz:', error);
     throw error;
@@ -157,13 +299,15 @@ async function generateQuiz(content: string, fileId: string) {
 // Generate summary from text content
 async function generateSummary(content: string, fileId: string) {
   try {
+    console.log('Generating summary for file:', fileId);
     // Call OpenRouter API to generate summary
     const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        'HTTP-Referer': APP_URL,
+        'X-Title': 'Lammah AI',
       },
       body: JSON.stringify({
         model: 'mistralai/mixtral-8x7b-instruct',
@@ -210,13 +354,15 @@ async function generateSummary(content: string, fileId: string) {
 // Generate flashcards from text content
 async function generateFlashcards(content: string, fileId: string) {
   try {
+    console.log('Generating flashcards for file:', fileId);
     // Call OpenRouter API to generate flashcards
     const openRouterResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        'HTTP-Referer': APP_URL,
+        'X-Title': 'Lammah AI',
       },
       body: JSON.stringify({
         model: 'mistralai/mixtral-8x7b-instruct',
@@ -257,105 +403,20 @@ async function generateFlashcards(content: string, fileId: string) {
       throw new Error('Invalid flashcards format received from AI');
     }
 
-    // Format and validate flashcards
-    const formattedFlashcards = flashcards.map(f => ({
-      question: f.question,
-      answer: f.answer
-    }));
-
-    if (!formattedFlashcards.every(f => f.question && f.answer)) {
-      throw new Error('Invalid flashcard format in AI response');
-    }
-
-    // Insert flashcards
+    // Create flashcards record
     const { error: flashcardsError } = await supabase
       .from('flashcards')
-      .insert(
-        formattedFlashcards.map(f => ({
-          file_id: fileId,
-          question: f.question,
-          answer: f.answer
-        }))
-      );
+      .insert([{
+        file_id: fileId,
+        cards: flashcards
+      }]);
 
     if (flashcardsError) throw flashcardsError;
 
-    return { flashcards: formattedFlashcards };
+    return { flashcards };
   } catch (error) {
     console.error('Error generating flashcards:', error);
     throw error;
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json() as ProcessFileRequest;
-    const { fileId, action, fileContent, fileUrl } = body;
-
-    // Check if either fileContent or fileUrl is provided
-    if (!fileId || !action || (!fileContent && !fileUrl)) {
-      return NextResponse.json(
-        { error: 'يجب توفير معرف الملف ونوع المعالجة ومحتوى الملف أو رابط الملف' },
-        { status: 400 }
-      );
-    }
-
-    if (!['quiz', 'summary', 'flashcards'].includes(action)) {
-      return NextResponse.json(
-        { error: 'نوع المعالجة غير صالح' },
-        { status: 400 }
-      );
-    }
-
-    let result;
-
-    // If fileUrl is provided but fileContent is not, extract text from the file URL
-    let content = fileContent;
-    if (!content && fileUrl) {
-      try {
-        content = await extractTextFromFile(fileUrl);
-      } catch (error) {
-        return NextResponse.json(
-          { error: 'فشل في استخراج محتوى الملف من الرابط' },
-          { status: 400 }
-        );
-      }
-    }
-
-    switch (action) {
-      case 'quiz':
-        if (!content) {
-            throw new Error('Content is required for quiz generation');
-        }
-        result = await generateQuiz(content, fileId);
-        break;
-      case 'summary':
-        if (!content) {
-            throw new Error('Content is required for summary generation');
-        }
-        result = await generateSummary(content, fileId);
-        break;
-      case 'flashcards':
-        if (!content) {
-            throw new Error('Content is required for flashcards generation');
-        }
-        result = await generateFlashcards(content, fileId);
-        break;
-      default:
-        return NextResponse.json(
-          { error: 'نوع المعالجة غير مدعوم حاليًا' },
-          { status: 400 }
-        );
-    }
-
-    return NextResponse.json({ result });
-  } catch (error) {
-    console.error('خطأ في معالجة الملف:', error);
-    const errorMessage = error instanceof Error ? error.message : 'حدث خطأ أثناء معالجة الملف';
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
   }
 }
 
@@ -397,37 +458,42 @@ function parseQuizText(text: string): QuizQuestion[] {
 function parseFlashcardsText(text: string): Array<{ question: string; answer: string }> {
   const flashcards: Array<{ question: string; answer: string }> = [];
   const lines = text.split('\n').filter(line => line.trim());
+  
   let currentQuestion = '';
   let currentAnswer = '';
+  let isQuestion = true;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    
-    if (/^\d+\./.test(line) || line.startsWith('س:') || line.startsWith('سؤال:')) {
-      // If we already have a question and answer pair, add it to flashcards
+  for (const line of lines) {
+    if (/^\d+\./.test(line)) {
       if (currentQuestion && currentAnswer) {
         flashcards.push({
           question: currentQuestion,
           answer: currentAnswer
         });
       }
-      
-      // Start a new question
-      currentQuestion = line.replace(/^\d+\.\s*|^س:\s*|^سؤال:\s*/, '').trim();
+      currentQuestion = line.replace(/^\d+\.\s*/, '').trim();
       currentAnswer = '';
-    } else if (line.startsWith('ج:') || line.startsWith('جواب:') || line.startsWith('الإجابة:')) {
-      // This is an answer line
-      currentAnswer = line.replace(/^ج:\s*|^جواب:\s*|^الإجابة:\s*/, '').trim();
-    } else if (currentQuestion && !currentAnswer) {
-      // If we have a question but no answer yet, this might be the answer
-      currentAnswer = line;
-    } else if (currentAnswer) {
-      // If we already have an answer, this might be a continuation
-      currentAnswer += '\n' + line;
+      isQuestion = false;
+    } else if (line.startsWith('س:') || line.startsWith('سؤال:')) {
+      if (currentQuestion && currentAnswer) {
+        flashcards.push({
+          question: currentQuestion,
+          answer: currentAnswer
+        });
+      }
+      currentQuestion = line.replace(/^(س:|سؤال:)\s*/, '').trim();
+      currentAnswer = '';
+      isQuestion = false;
+    } else if (line.startsWith('ج:') || line.startsWith('جواب:')) {
+      currentAnswer = line.replace(/^(ج:|جواب:)\s*/, '').trim();
+      isQuestion = true;
+    } else if (!isQuestion) {
+      currentAnswer += ' ' + line.trim();
+    } else {
+      currentQuestion += ' ' + line.trim();
     }
   }
 
-  // Add the last flashcard if there is one
   if (currentQuestion && currentAnswer) {
     flashcards.push({
       question: currentQuestion,

@@ -92,29 +92,95 @@ export default function FileViewer() {
   };
 
   const processFile = async (action: "quiz" | "summary" | "flashcards") => {
-    if (!file) return;
-
-    setProcessing(true);
-    setResult(null);
+    if (!file) {
+      setResult({
+        success: false,
+        error: 'No file selected. Please select a file first.'
+      });
+      return;
+    }
 
     try {
-      // Prepare request payload with both fileUrl and content if available
+      setProcessing(true);
+      setResult(null);
+
+      // Check session validity
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !session.access_token) {
+        console.error('No valid session found');
+        throw new Error('Please log in to continue');
+      }
+      console.log('Session found:', { 
+        hasAccessToken: !!session.access_token,
+        tokenPreview: session.access_token?.substring(0, 10) + '...'
+      });
+
+      // Ensure we have the file content
+      let fileContent = file.content;
+      
+      // If we don't have content but have a URL, try to fetch it first
+      if (!fileContent && (file.file_url || file.url)) {
+        try {
+          const fileUrl = file.file_url || file.url;
+          console.log(`Fetching file content from: ${fileUrl}`);
+          
+          const response = await fetch(fileUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch file: ${response.statusText}`);
+          }
+          
+          // Get content based on file type
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('text/') || contentType.includes('application/json')) {
+            fileContent = await response.text();
+          } else {
+            fileContent = `Content extracted from ${file.file_name || file.name}`;
+          }
+          
+          console.log('Successfully fetched file content');
+        } catch (error) {
+          console.error('Error fetching file content:', error);
+          // Continue with empty content if fetch fails
+          fileContent = '';
+        }
+      }
+      
+      // Prepare request payload with file details
       const payload = {
         fileId: file.id,
         action,
         fileUrl: file.file_url || file.url,
-        fileContent: file.content || undefined
+        fileContent: fileContent || `Sample content for ${file.file_name || 'file'}`
       };
 
-      const response = await fetch(`/api/process-file`, {
+      console.log(`Sending ${action} request to API:`, payload);
+
+      // Use the simplified API endpoint with authentication
+      const response = await fetch('/api/process', {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(payload),
+        credentials: 'include' // Important: include cookies
       });
 
-      const data = await response.json();
+      // Check if response is OK
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`API error (${response.status}):`, errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
 
-      if (!response.ok) throw new Error(data.error);
+      // Parse JSON response
+      const data = await response.json();
+      console.log('API response:', data);
+
+      if (!data.result) {
+        throw new Error('Invalid response from server: missing result data');
+      }
 
       setResult({
         success: true,
@@ -122,7 +188,7 @@ export default function FileViewer() {
       });
 
       // Redirect to appropriate page based on action
-      if (action === "quiz") {
+      if (action === "quiz" && data.result.quizId) {
         router.push(`/quizzes/${data.result.quizId}`);
       } else if (action === "flashcards") {
         router.push(`/flashcards/${file.id}`);
@@ -133,7 +199,7 @@ export default function FileViewer() {
       console.error(`❌ Error processing file for ${action}:`, err);
       setResult({
         success: false,
-        error: `Failed to process file for ${action}. Please try again.`
+        error: err instanceof Error ? err.message : 'Failed to process file'
       });
     } finally {
       setProcessing(false);

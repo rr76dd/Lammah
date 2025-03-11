@@ -27,6 +27,7 @@ export default function QuizzesPage() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [files, setFiles] = useState<FileData[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('medium');
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -57,11 +58,11 @@ export default function QuizzesPage() {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
-
-        setFiles(data as FileData[]);
+        setFiles(data || []);
+        setError(""); // Clear any previous errors even if the array is empty
       } catch (err) {
-        console.error("❌ خطأ أثناء تحميل الملفات:", err);
-        setError("❌ حدث خطأ أثناء تحميل الملفات.");
+        console.error("Error loading files:", err);
+        setError("حدث خطأ أثناء تحميل الملفات.");
       } finally {
         setLoading(false);
       }
@@ -72,20 +73,17 @@ export default function QuizzesPage() {
 
   // ✅ جلب قائمة الاختبارات
   const fetchQuizzes = async () => {
-    setLoading(true);
-    setError("");
-
     try {
-      const { data, error } = await supabase.from("quizzes").select("id, title, difficulty, created_at");
+      const { data, error } = await supabase
+        .from("quizzes")
+        .select("id, title, difficulty, created_at")
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
-
-      setQuizzes(data as Quiz[]);
+      setQuizzes(data || []);
     } catch (err) {
-      console.error("❌ خطأ أثناء تحميل الاختبارات:", err);
-      setError("❌ حدث خطأ أثناء تحميل الاختبارات.");
-    } finally {
-      setLoading(false);
+      console.error("Error loading quizzes:", err);
+      // Don't set error here as it might be displayed incorrectly
     }
   };
 
@@ -93,10 +91,10 @@ export default function QuizzesPage() {
     fetchQuizzes();
   }, []);
 
-  // ✅ إنشاء اختبار جديد تلقائيًا باستخدام الذكاء الاصطناعي مع عنوان ديناميكي
+  // ✅ إنشاء اختبار جديد
   const generateQuiz = async () => {
     if (!selectedFile) {
-      setError("❌ يرجى اختيار ملف لإنشاء الاختبار.");
+      setError("يرجى اختيار ملف لإنشاء الاختبار.");
       return;
     }
 
@@ -106,36 +104,34 @@ export default function QuizzesPage() {
 
     try {
       const file = files.find(f => f.id === selectedFile);
-      if (!file) throw new Error("❌ الملف غير موجود.");
+      if (!file) throw new Error("الملف غير موجود.");
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/process-file`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fileId: file.id,
           action: "quiz",
-          fileContent: file.content // Using content from FileData interface
+          fileContent: file.content,
+          difficulty: selectedDifficulty
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "❌ فشل في معالجة الملف.");
+        throw new Error(errorData.error || "فشل في معالجة الملف.");
       }
 
-      const { result } = await response.json();
-      if (!result || !result.quizId || !result.title) {
-        throw new Error("❌ فشل في إنشاء الاختبار.");
+      const data = await response.json();
+      if (data.result?.quizId) {
+        router.push(`/quizzes/${data.result.quizId}`);
       }
 
-      // Refresh the quizzes list
       await fetchQuizzes();
-      
-      // Show success message
       setError(""); // Clear any previous errors
     } catch (err) {
-      console.error("❌ خطأ أثناء إنشاء الاختبار:", err);
-      setError(typeof err === 'string' ? err : err instanceof Error ? err.message : "❌ حدث خطأ أثناء إنشاء الاختبار.");
+      console.error("Error generating quiz:", err);
+      setError(err instanceof Error ? err.message : "حدث خطأ أثناء إنشاء الاختبار.");
     } finally {
       setGenerating(false);
     }
@@ -148,29 +144,49 @@ export default function QuizzesPage() {
           <CardTitle className="text-2xl font-bold text-center">إدارة الاختبارات</CardTitle>
         </CardHeader>
         <CardContent>
-          {error && <p className="text-red-500 text-center">{error}</p>}
-          {generating && <p className="text-center text-blue-600">🔄 جاري توليد الاختبار...</p>}
+          {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+          {generating && <p className="text-center text-blue-600 mb-4">جاري توليد الاختبار...</p>}
 
-          <Button className="w-full bg-blue-600 text-white mb-4" onClick={() => setShowDialog(true)} disabled={generating}>
+          <Button 
+            className="w-full bg-blue-600 text-white mb-6" 
+            onClick={() => setShowDialog(true)} 
+            disabled={generating}
+          >
             {generating ? "جاري التوليد..." : "إنشاء اختبار جديد"}
           </Button>
 
-          {loading ? <p className="text-center text-gray-600">جاري تحميل الاختبارات...</p> : (
-            <ul className="space-y-4">
+          {quizzes.length > 0 ? (
+            <div className="space-y-4">
               {quizzes.map((quiz) => (
-                <li key={quiz.id} className="flex justify-between items-center border p-3 rounded shadow-sm">
-                  <div>
-                    <p className="font-semibold">{quiz.title}</p>
-                    <p className="text-sm text-gray-500">الصعوبة: {quiz.difficulty}</p>
+                <div key={quiz.id} className="flex flex-col gap-2 border p-4 rounded shadow-sm">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-semibold text-lg">{quiz.title}</h3>
+                    <span className={`px-2 py-1 rounded text-sm ${
+                      quiz.difficulty === 'easy' ? 'bg-green-100 text-green-800' :
+                      quiz.difficulty === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {quiz.difficulty === 'easy' ? 'سهل' :
+                       quiz.difficulty === 'medium' ? 'متوسط' :
+                       'صعب'}
+                    </span>
                   </div>
-                  <div className="space-x-2">
-                    <Button className="bg-green-600 text-white" onClick={() => router.push(`/quizzes/${quiz.id}`)}>
-                      عرض الاختبار
-                    </Button>
-                  </div>
-                </li>
+                  <p className="text-sm text-gray-500">
+                    {new Date(quiz.created_at).toLocaleDateString('ar-SA')}
+                  </p>
+                  <Button 
+                    className="w-full bg-green-600 text-white mt-2" 
+                    onClick={() => router.push(`/quizzes/${quiz.id}`)}
+                  >
+                    مراجعة الاختبار
+                  </Button>
+                </div>
               ))}
-            </ul>
+            </div>
+          ) : loading ? (
+            <p className="text-center text-gray-600">جاري تحميل الاختبارات...</p>
+          ) : (
+            <p className="text-center text-gray-500">لا توجد اختبارات حالياً</p>
           )}
         </CardContent>
       </Card>
@@ -181,22 +197,41 @@ export default function QuizzesPage() {
             <DialogTitle>إنشاء اختبار جديد</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-lg font-semibold">اختر الملف لإنشاء الاختبار منه:</p>
+            <div>
+              <label className="block text-sm font-medium mb-2">اختر الملف:</label>
+              <Select onValueChange={setSelectedFile} value={selectedFile || undefined}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر ملفاً" />
+                </SelectTrigger>
+                <SelectContent>
+                  {files.map((file) => (
+                    <SelectItem key={file.id} value={file.id}>
+                      {file.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select onValueChange={setSelectedFile} value={selectedFile || undefined}>
-              <SelectTrigger>
-                <SelectValue placeholder="اختر ملفًا" />
-              </SelectTrigger>
-              <SelectContent>
-                {files.map((file) => (
-                  <SelectItem key={file.id} value={file.id}>
-                    {file.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div>
+              <label className="block text-sm font-medium mb-2">مستوى الصعوبة:</label>
+              <Select onValueChange={setSelectedDifficulty} value={selectedDifficulty}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر مستوى الصعوبة" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="easy">سهل</SelectItem>
+                  <SelectItem value="medium">متوسط</SelectItem>
+                  <SelectItem value="hard">صعب</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Button className="w-full bg-blue-600 text-white" onClick={generateQuiz} disabled={generating || !selectedFile}>
+            <Button 
+              className="w-full bg-blue-600 text-white" 
+              onClick={generateQuiz} 
+              disabled={generating || !selectedFile}
+            >
               {generating ? "جاري التوليد..." : "إنشاء الاختبار"}
             </Button>
           </div>
